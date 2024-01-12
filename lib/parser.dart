@@ -1,11 +1,14 @@
 import 'dart:developer';
 import 'dart:ui' as ui;
 import 'dart:typed_data' show Uint8List;
+import 'dart:ui';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/painting.dart' show decodeImageFromList;
+import 'package:flutter/painting.dart'
+    show PaintingBinding, decodeImageFromList;
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:http/http.dart' show get;
 import 'package:archive/archive.dart' as archive;
+
 // ignore: import_of_legacy_library_into_null_safe
 import 'proto/svga.pbserver.dart';
 
@@ -14,21 +17,42 @@ const _filterKey = 'SVGAParser';
 /// You use SVGAParser to load and decode animation files.
 class SVGAParser {
   const SVGAParser();
+
   static const shared = SVGAParser();
 
   /// Download animation file from remote server, and decode it.
-  Future<MovieEntity> decodeFromURL(String url) async {
+  Future<MovieEntity> decodeFromURL(
+    String url, {
+    int? maxMemWidth,
+    int? maxMemHeight,
+  }) async {
     final response = await get(Uri.parse(url));
-    return decodeFromBuffer(response.bodyBytes);
+    return decodeFromBuffer(
+      response.bodyBytes,
+      maxMemWidth: maxMemWidth,
+      maxMemHeight: maxMemHeight,
+    );
   }
 
   /// Download animation file from bundle assets, and decode it.
-  Future<MovieEntity> decodeFromAssets(String path) async {
-    return decodeFromBuffer((await rootBundle.load(path)).buffer.asUint8List());
+  Future<MovieEntity> decodeFromAssets(
+    String path, {
+    int? maxMemWidth,
+    int? maxMemHeight,
+  }) async {
+    return decodeFromBuffer(
+      (await rootBundle.load(path)).buffer.asUint8List(),
+      maxMemWidth: maxMemWidth,
+      maxMemHeight: maxMemHeight,
+    );
   }
 
   /// Download animation file from buffer, and decode it.
-  Future<MovieEntity> decodeFromBuffer(List<int> bytes) {
+  Future<MovieEntity> decodeFromBuffer(
+    List<int> bytes, {
+    int? maxMemWidth,
+    int? maxMemHeight,
+  }) {
     TimelineTask? timeline;
     if (!kReleaseMode) {
       timeline = TimelineTask(filterKey: _filterKey)
@@ -47,6 +71,8 @@ class SVGAParser {
     return _prepareResources(
       _processShapeItems(movie),
       timeline: timeline,
+      maxMemWidth: maxMemWidth,
+      maxMemHeight: maxMemHeight,
     ).whenComplete(() {
       if (timeline != null) timeline.finish();
     });
@@ -69,30 +95,53 @@ class SVGAParser {
     return movieItem;
   }
 
-  Future<MovieEntity> _prepareResources(MovieEntity movieItem,
-      {TimelineTask? timeline}) {
+  Future<MovieEntity> _prepareResources(
+    MovieEntity movieItem, {
+    TimelineTask? timeline,
+    int? maxMemWidth,
+    int? maxMemHeight,
+  }) {
     final images = movieItem.images;
     if (images.isEmpty) return Future.value(movieItem);
     return Future.wait(images.entries.map((item) async {
       // result null means a decoding error occurred
       final decodeImage = await _decodeImageItem(
-          item.key, Uint8List.fromList(item.value),
-          timeline: timeline);
+        item.key,
+        Uint8List.fromList(item.value),
+        timeline: timeline,
+        getTargetSize: (int intrinsicWidth, int intrinsicHeight) {
+          double intrinsicAspectRatio = intrinsicWidth / intrinsicHeight;
+          int width = intrinsicWidth.clamp(0, maxMemWidth ?? intrinsicWidth);
+          int height =
+              intrinsicHeight.clamp(0, maxMemHeight ?? intrinsicHeight);
+          if (width < height * intrinsicAspectRatio) {
+            height = (width / intrinsicAspectRatio).round();
+          } else {
+            width = (height * intrinsicAspectRatio).round();
+          }
+          return TargetImageSize(width: width, height: height);
+        },
+      );
       if (decodeImage != null) {
         movieItem.bitmapCache[item.key] = decodeImage;
       }
     })).then((_) => movieItem);
   }
 
-  Future<ui.Image?> _decodeImageItem(String key, Uint8List bytes,
-      {TimelineTask? timeline}) async {
+  Future<ui.Image?> _decodeImageItem(
+    String key,
+    Uint8List bytes, {
+    TimelineTask? timeline,
+    TargetImageSizeCallback? getTargetSize,
+  }) async {
     TimelineTask? task;
     if (!kReleaseMode) {
       task = TimelineTask(filterKey: _filterKey, parent: timeline)
         ..start('DecodeImage', arguments: {'key': key, 'length': bytes.length});
     }
     try {
-      final image = await decodeImageFromList(bytes);
+      final image = await decodeImageFromListWithSize(bytes,
+          getTargetSize: getTargetSize);
       if (task != null) {
         task.finish(
           arguments: {'imageSize': '${image.width}x${image.height}'},
@@ -118,4 +167,15 @@ class SVGAParser {
       return null;
     }
   }
+}
+
+Future<ui.Image> decodeImageFromListWithSize(
+  Uint8List bytes, {
+  TargetImageSizeCallback? getTargetSize,
+}) async {
+  var buffer = await ImmutableBuffer.fromUint8List(bytes);
+  final ui.Codec codec =
+      await instantiateImageCodecWithSize(buffer, getTargetSize: getTargetSize);
+  final ui.FrameInfo frameInfo = await codec.getNextFrame();
+  return frameInfo.image;
 }

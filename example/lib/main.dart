@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:svgaplayer_flutter/svgaplayer_flutter.dart';
@@ -16,6 +17,8 @@ class HomeScreen extends StatelessWidget {
   final samples = const <String>[
     "assets/angel.svga",
     "assets/pin_jump.svga",
+    "https://pro.rela.me/gift/svg/1703848216427wioaty.svga",
+    "https://pro.rela.me/gift/svg/1664432027147uneztq.svga",
     "https://cdn.jsdelivr.net/gh/svga/SVGA-Samples@master/EmptyState.svga",
     "https://cdn.jsdelivr.net/gh/svga/SVGA-Samples@master/HamburgerArrow.svga",
     "https://cdn.jsdelivr.net/gh/svga/SVGA-Samples@master/PinJump.svga",
@@ -84,9 +87,13 @@ class SVGASampleScreen extends StatefulWidget {
   final String? name;
   final String image;
   final void Function(MovieEntity entity)? dynamicCallback;
-  const SVGASampleScreen(
-      {Key? key, required this.image, this.name, this.dynamicCallback})
-      : super(key: key);
+
+  const SVGASampleScreen({
+    Key? key,
+    required this.image,
+    this.name,
+    this.dynamicCallback,
+  }) : super(key: key);
 
   @override
   _SVGASampleScreenState createState() => _SVGASampleScreenState();
@@ -108,7 +115,6 @@ class _SVGASampleScreenState extends State<SVGASampleScreen>
   void initState() {
     super.initState();
     this.animationController = SVGAAnimationController(vsync: this);
-    this._loadAnimation();
   }
 
   @override
@@ -116,6 +122,7 @@ class _SVGASampleScreenState extends State<SVGASampleScreen>
     super.didChangeDependencies();
     containerWidth = math.min(350, MediaQuery.of(context).size.width);
     containerHeight = math.min(350, MediaQuery.of(context).size.height);
+    this._loadAnimation();
   }
 
   @override
@@ -127,7 +134,11 @@ class _SVGASampleScreenState extends State<SVGASampleScreen>
 
   void _loadAnimation() async {
     // FIXME: may throw error on loading
-    final videoItem = await _loadVideoItem(widget.image);
+    var devicePixelRatio = View.of(context).devicePixelRatio;
+    int widthPx = (devicePixelRatio * containerWidth).toInt();
+    int heightPx = (devicePixelRatio * containerHeight).toInt();
+    final videoItem = await _loadVideoItem(widget.image,
+        maxMemWidth: widthPx, maxMemHeight: heightPx);
     if (widget.dynamicCallback != null) {
       widget.dynamicCallback!(videoItem);
     }
@@ -377,12 +388,16 @@ class _SVGASampleScreenState extends State<SVGASampleScreen>
   }
 }
 
-Future _loadVideoItem(String image) {
-  Future Function(String) decoder;
+Future _loadVideoItem(
+  String image, {
+  int? maxMemWidth,
+  int? maxMemHeight,
+}) {
+  Future Function(String url, {int? maxMemWidth, int? maxMemHeight}) decoder;
   if (image.startsWith(RegExp(r'https?://'))) {
     decoder = SVGAParser.shared.decodeFromURL;
   } else {
     decoder = SVGAParser.shared.decodeFromAssets;
   }
-  return decoder(image);
+  return decoder(image, maxMemWidth: maxMemWidth, maxMemHeight: maxMemHeight);
 }

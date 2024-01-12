@@ -3,9 +3,16 @@ part of svgaplayer_flutter_player;
 class SVGASimpleImage extends StatefulWidget {
   final String? resUrl;
   final String? assetsName;
+  final int? maxMemWidth;
+  final int? maxMemHeight;
 
-  const SVGASimpleImage({Key? key, this.resUrl, this.assetsName})
-      : super(key: key);
+  const SVGASimpleImage({
+    Key? key,
+    this.resUrl,
+    this.assetsName,
+    this.maxMemWidth,
+    this.maxMemHeight,
+  }) : super(key: key);
 
   @override
   State<StatefulWidget> createState() {
@@ -27,7 +34,8 @@ class _SVGASimpleImageState extends State<SVGASimpleImage>
   @override
   void didUpdateWidget(covariant SVGASimpleImage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.resUrl != widget.resUrl || oldWidget.assetsName != widget.assetsName) {
+    if (oldWidget.resUrl != widget.resUrl ||
+        oldWidget.assetsName != widget.assetsName) {
       _tryDecodeSvga();
     }
   }
@@ -50,9 +58,11 @@ class _SVGASimpleImageState extends State<SVGASimpleImage>
   void _tryDecodeSvga() {
     Future<MovieEntity> decode;
     if (widget.resUrl != null) {
-      decode = SVGAParser.shared.decodeFromURL(widget.resUrl!);
+      decode = SVGAParser.shared.decodeFromURL(widget.resUrl!,
+          maxMemWidth: widget.maxMemWidth, maxMemHeight: widget.maxMemHeight);
     } else if (widget.assetsName != null) {
-      decode = SVGAParser.shared.decodeFromAssets(widget.assetsName!);
+      decode = SVGAParser.shared.decodeFromAssets(widget.assetsName!,
+          maxMemWidth: widget.maxMemWidth, maxMemHeight: widget.maxMemHeight);
     } else {
       return;
     }
